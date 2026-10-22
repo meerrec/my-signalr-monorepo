@@ -46,6 +46,9 @@
    `WorkerHubClient` без побочных эффектов. `stop()` отклоняет все pending invoke,
    просит Worker остановить соединение, ждёт `stopped` не дольше 2 с и вызывает
    `terminate()`. Повторный `start()` после `stop()` (StrictMode) создаёт новый Worker.
+   Если `stop` приходит до завершения `start()` (dev StrictMode), Worker не вызывает
+   `connection.stop()` и сразу сообщает `stopped`: незавершённый negotiate обрывается
+   завершением Worker, иначе SignalR логирует ошибку «stopped during negotiation».
    Относительный URL хаба нормализуется в абсолютный на main thread: внутри Worker
    `@microsoft/signalr` не резолвит относительные URL.
 

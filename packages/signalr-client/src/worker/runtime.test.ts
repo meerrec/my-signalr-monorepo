@@ -246,6 +246,34 @@ describe('runChatWorker', () => {
     expect(scope.messages).toEqual([{ type: 'stopped' }]);
   });
 
+  it('stop во время start не вызывает stop соединения', async () => {
+    const connection = new FakeConnection();
+    let resolveStart: () => void = () => {};
+
+    connection.start = (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        resolveStart = resolve;
+      });
+
+    const { scope } = setup(connection);
+
+    scope.send({ type: 'start', url: HUB_URL });
+    await flush();
+
+    scope.send({ type: 'stop' });
+    await flush();
+
+    // Незавершённый negotiate обрывается завершением Worker, а не stop():
+    // иначе SignalR логирует ошибку «stopped during negotiation».
+    expect(connection.stopped).toBe(false);
+    expect(scope.messages.at(-1)).toEqual({ type: 'stopped' });
+
+    resolveStart();
+    await flush();
+
+    expect(connection.stopped).toBe(false);
+  });
+
   it('не отправляет запоздавший connected после stop', async () => {
     const connection = new FakeConnection();
     let resolveStart: () => void = () => {};

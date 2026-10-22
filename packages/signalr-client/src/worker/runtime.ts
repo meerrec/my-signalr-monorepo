@@ -34,6 +34,10 @@ interface InvokeMessage {
  */
 export function runChatWorker({ scope, createConnection }: RunChatWorkerOptions): void {
   let connection: HubConnection | null = null;
+  // Соединение, у которого start() уже завершился: только его можно штатно
+  // останавливать через stop(). При отмене во время negotiate stop() заставил бы
+  // SignalR залогировать ошибку «stopped during negotiation» (StrictMode).
+  let startedConnection: HubConnection | null = null;
   // Поколение меняется на каждый start/stop: запоздавшие статусы старых
   // соединений не должны перетирать актуальное состояние.
   let generation = 0;
@@ -48,6 +52,7 @@ export function runChatWorker({ scope, createConnection }: RunChatWorkerOptions)
 
     const previous = connection;
     connection = null;
+    startedConnection = null;
 
     // Повторный start перезапускает соединение с нуля.
     if (previous !== null) {
@@ -133,6 +138,7 @@ export function runChatWorker({ scope, createConnection }: RunChatWorkerOptions)
       return;
     }
 
+    startedConnection = next;
     postStatus('connected', null);
   };
 
@@ -143,7 +149,12 @@ export function runChatWorker({ scope, createConnection }: RunChatWorkerOptions)
     const active = connection;
     connection = null;
 
-    if (active !== null) {
+    // Если start ещё не завершился, штатный stop() не нужен: main thread
+    // завершит Worker, а незавершённый negotiate будет оборван вместе с ним.
+    const wasStarted = active !== null && startedConnection === active;
+    startedConnection = null;
+
+    if (wasStarted && active !== null) {
       try {
         await active.stop();
       } catch {
