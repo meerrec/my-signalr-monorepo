@@ -69,6 +69,54 @@ function statusFromState(state: HubConnectionState): ConnectionStatus {
   }
 }
 
+interface ConnectionListeners {
+  reconnecting: Set<(error?: Error) => void>;
+  reconnected: Set<(connectionId?: string) => void>;
+  close: Set<(error?: Error) => void>;
+}
+
+const connectionListeners = new WeakMap<HubConnection, ConnectionListeners>();
+
+/**
+ * SignalR не умеет снимать lifecycle-обработчики: `off` работает только с методами,
+ * зарегистрированными через `on`. Поэтому на каждое соединение один раз ставится
+ * стабильный диспетчер, а подписки провайдера хранятся в наборах и снимаются точечно.
+ * Это защищает от накопления обработчиков при двойном вызове эффекта в StrictMode.
+ */
+function getConnectionListeners(connection: HubConnection): ConnectionListeners {
+  const existing = connectionListeners.get(connection);
+
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const listeners: ConnectionListeners = {
+    reconnecting: new Set(),
+    reconnected: new Set(),
+    close: new Set(),
+  };
+
+  connectionListeners.set(connection, listeners);
+
+  connection.onreconnecting((reconnectError) => {
+    for (const handler of listeners.reconnecting) {
+      handler(reconnectError);
+    }
+  });
+  connection.onreconnected((connectionId) => {
+    for (const handler of listeners.reconnected) {
+      handler(connectionId);
+    }
+  });
+  connection.onclose((closeError) => {
+    for (const handler of listeners.close) {
+      handler(closeError);
+    }
+  });
+
+  return listeners;
+}
+
 export function SignalRProvider({
   url,
   connection: externalConnection,
@@ -84,6 +132,9 @@ export function SignalRProvider({
 
   useEffect(() => {
     let cancelled = false;
+    let stopStateWatcher: (() => void) | undefined;
+
+    const listeners = getConnectionListeners(connection);
 
     const handleReconnecting = (reconnectError?: Error): void => {
       if (cancelled) {
@@ -112,12 +163,42 @@ export function SignalRProvider({
 
       if (closeError !== undefined) {
         setError(toErrorMessage(closeError, 'Соединение с SignalR закрыто'));
+        return;
       }
+
+      setError(null);
     };
 
-    connection.onreconnecting(handleReconnecting);
-    connection.onreconnected(handleReconnected);
-    connection.onclose(handleClose);
+    // События onconnected у SignalR нет, поэтому внешнее соединение, которое
+    // уже находится в Connecting, переводим в конечный статус опросом состояния.
+    const watchConnectionState = (): (() => void) => {
+      const intervalId = setInterval(() => {
+        if (cancelled) {
+          clearInterval(intervalId);
+          return;
+        }
+
+        if (connection.state === HubConnectionState.Connecting) {
+          return;
+        }
+
+        clearInterval(intervalId);
+
+        const nextStatus = statusFromState(connection.state);
+        setStatus(nextStatus);
+
+        // Текст ошибки обрыва выставляет onclose, здесь его не затираем.
+        if (nextStatus === 'connected') {
+          setError(null);
+        }
+      }, 200);
+
+      return () => clearInterval(intervalId);
+    };
+
+    listeners.reconnecting.add(handleReconnecting);
+    listeners.reconnected.add(handleReconnected);
+    listeners.close.add(handleClose);
 
     const start = async (): Promise<void> => {
       try {
@@ -163,8 +244,15 @@ export function SignalRProvider({
         }
 
         if (!cancelled) {
-          setStatus(statusFromState(connection.state));
+          const nextStatus = statusFromState(connection.state);
+          setStatus(nextStatus);
           setError(null);
+
+          // Владелец уже запускает соединение: дождёмся смены состояния опросом,
+          // потому что отдельного события об успешном подключении нет.
+          if (nextStatus === 'connecting') {
+            stopStateWatcher = watchConnectionState();
+          }
         }
       } catch (startError) {
         if (cancelled) {
@@ -180,6 +268,11 @@ export function SignalRProvider({
 
     return () => {
       cancelled = true;
+      stopStateWatcher?.();
+
+      listeners.reconnecting.delete(handleReconnecting);
+      listeners.reconnected.delete(handleReconnected);
+      listeners.close.delete(handleClose);
 
       if (owned) {
         void connection.stop().catch(() => {});

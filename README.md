@@ -120,7 +120,9 @@ specs/*.json
 data-контракты, а скрипт выпускает типизированные React-хуки из той же merged-спеки.
 
 Сгенерированные файлы не редактируются руками. Типы из OpenAPI не дублируются:
-сущности и фичи импортируют их через `shared/api/signalr`.
+сущности и фичи импортируют их из `@chat/signalr-client`, а типизированные
+SignalR-обёртки (`useChatEvent`, `useChatInvoke`, `useChatConnectionStatus`) —
+через `shared/api/signalr`.
 
 Обновление контрактов:
 
