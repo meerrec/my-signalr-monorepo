@@ -9,3 +9,5 @@ coverage/
 .env.*
 !.env.example
 reports/*.log
+server/**/bin/
+server/**/obj/

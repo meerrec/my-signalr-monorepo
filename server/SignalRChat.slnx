@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="SignalRChat.Application/SignalRChat.Application.csproj" />
+  <Project Path="SignalRChat.Domain/SignalRChat.Domain.csproj" />
+  <Project Path="SignalRChat.Infrastructure/SignalRChat.Infrastructure.csproj" />
+  <Project Path="SignalRChat.Server/SignalRChat.Server.csproj" />
+</Solution>

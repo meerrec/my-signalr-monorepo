@@ -48,7 +48,7 @@ pnpm install && pnpm build
 | --- | --- | --- | --- |
 | `@architect` | Черновик AGENTS.md, FSD-требования | Финальный AGENTS.md, `eslint.config.js` с `eslint-plugin-boundaries`, ADR | Ноль нарушений границ |
 | `@state-manager` | Список слайсов, контракт атомов | `docs/state-management.md`, атомы в `model/`, тесты атомов через `createStore()` | Все атомы изолированы в слайсах, мега-атомов нет |
-| `@signalr-integrator` | OpenAPI-спеки, `packages/*` | `specs/**`, `scripts/generate-contracts.ts`, `packages/signalr-client`, `packages/shared-types` | Type-safe вызовы и подписки, генерация воспроизводима |
+| `@signalr-integrator` | OpenAPI-спеки, `packages/*`, сервер | `openapi/**`, `server/**`, `scripts/generate-contracts.ts`, `packages/signalr-client`, `packages/shared-types` | Type-safe вызовы и подписки, генерация воспроизводима |
 | `@ui-builder` | Публичные API слайсов, дизайн-токены | `shared/ui`, `app/providers`, `widgets`, `pages`, UI/API-сегменты слайсов | Компоненты собираются без циклов |
 | `@infra` | Технологический стек | Корневые манифесты, `vite.config.ts`, tsconfig, workspace, скрипты | `pnpm build` зелёный с чистого клона |
 | `@qa` | Код всех субагентов | `reports/qa-report.md`, список дефектов | `lint`, `type-check`, `test`, `build` зелёные |
@@ -62,7 +62,8 @@ pnpm install && pnpm build
 | --- | --- |
 | `AGENTS.md`, `eslint.config.js`, `docs/adr/**` | `@architect` |
 | `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `tsconfig.base.json`, `.npmrc`, `.gitignore`, `vitest.config.ts`, `apps/web/{package.json,vite.config.ts,tsconfig.json,tsconfig.node.json,index.html}` | `@infra` |
-| `specs/**`, `scripts/**`, `packages/shared-types/**`, `packages/signalr-client/**` | `@signalr-integrator` |
+| `openapi/**`, `scripts/**`, `packages/shared-types/**`, `packages/signalr-client/**` | `@signalr-integrator` |
+| `server/**` | `@signalr-integrator` |
 | `apps/web/src/entities/*/model/**`, `apps/web/src/features/*/model/**`, `docs/state-management.md` | `@state-manager` |
 | `apps/web/src/app/**`, `apps/web/src/pages/**`, `apps/web/src/widgets/**`, `apps/web/src/shared/{ui,lib,config}/**`, `apps/web/src/entities/*/{api,ui}/**`, `apps/web/src/features/*/{api,ui}/**` | `@ui-builder` |
 | `apps/web/src/shared/api/**` | `@signalr-integrator` |
@@ -140,7 +141,7 @@ function useHubInvoke<K extends HubMethodName>(
 
 ### 4.3 Контракт SignalR-хаба
 
-Хаб: `ChatHub`, маршрут `/hubs/chat`. Метаданные хранятся в `specs/signalr.json`
+Хаб: `ChatHub`, маршрут `/hubs/chat`. Метаданные хранятся в `openapi/signalr.json`
 в корневом расширении `x-signalr-hub` (переживает merge через отдельное чтение спеки).
 
 | Метод | Request | Response |
@@ -167,7 +168,7 @@ function useHubInvoke<K extends HubMethodName>(
 `UserJoinedEvent {roomId, user}`, `UserLeftEvent {roomId, userId}`,
 `ErrorResponse {code, message}`.
 
-REST-пути объявлены в `specs/rest.json`:
+REST-пути объявлены в `openapi/rest.json`:
 
 - `GET /api/rooms` → `ChatRoom[]`
 - `GET /api/rooms/{roomId}/messages` → `ChatMessage[]`
@@ -338,6 +339,9 @@ type SetNameInvoker = (request: SetNameRequest) => Promise<ChatUser>;
 - Vite 8 (Rolldown), React 19, TypeScript strict.
 - Jotai 3; `Provider` в `app/providers/`.
 - SignalR: `@microsoft/signalr`.
+- Сервер: ASP.NET Core 10 + SignalR + `SignalR.OpenApi` (`server/SignalRChat.Server`), состояние in-memory.
+  Слои: `SignalRChat.Domain` ← `SignalRChat.Application` ← `SignalRChat.Infrastructure`;
+  `SignalRChat.Server` — composition root, Hub и REST.
 - OpenAPI: `swagger-typescript-api` + `openapi-merge-cli`. В версии 13.13 у генератора нет
   встроенного флага `reactHooks`, поэтому `scripts/generate-contracts.ts` реализует режим
   `reactHooks: true` сам: генерирует `Api` и типы через CLI, затем выпускает типизированные
@@ -400,8 +404,13 @@ pnpm verify
 | 2026-10-22 | Внешнее `connection` провайдер запускает, но не останавливает и не перезапускает | Владелец соединения управляет жизненным циклом; провайдер только наблюдает |
 | 2026-10-22 | `sourcemap` в `vite.config.ts` перенесён из `rolldownOptions.output` в `build.sourcemap` | Vite 8 не поддерживает `rolldownOptions.output.sourcemap` (warning); `rollupOptions` по-прежнему не используется |
 | 2026-10-22 | Публичный API `@chat/signalr-client` дополнен `generated/rest-hooks` и типами `SignalRProviderProps`/`SignalRContextValue` | §4.2 отставал от фактического экспорта; типы нужны `shared/api`, хуки генерируются по §8 |
-| 2026-10-22 | Из `specs/signalr.json` удалены negotiate-путь, `NegotiateResponse` и схемы-алиасы `ChatRoom`/`ChatMessage`/`ErrorResponse` | §4.3 не описывает negotiate; дубли давали `ChatRoom1`/`ChatMessage1`/`ErrorResponse1` в `generated/rest.ts` |
+| 2026-10-22 | Из `openapi/signalr.json` удалены negotiate-путь, `NegotiateResponse` и схемы-алиасы `ChatRoom`/`ChatMessage`/`ErrorResponse` | §4.3 не описывает negotiate; дубли давали `ChatRoom1`/`ChatMessage1`/`ErrorResponse1` в `generated/rest.ts` |
 | 2026-10-22 | Lifecycle-подписки провайдера снимаются диспетчером с `WeakMap`, а не `connection.off` | в `@microsoft/signalr@10.0.11` `off` не удаляет колбэки `onreconnecting`/`onreconnected`/`onclose`; иначе StrictMode копит обработчики |
 | 2026-10-22 | Статус внешнего соединения в `Connecting` синхронизируется опросом состояния (200 мс) | события `onconnected` в SignalR нет — статус залипал в `connecting` |
 | 2026-10-22 | В `build` добавлен `rolldownOptions` | приведение `vite.config.ts` к правилу 8; `rollupOptions` отсутствует, sourcemap остаётся в `build.sourcemap` |
-| 2026-10-22 | `ChatRoom.memberCount` сделан обязательным в `specs/rest.json` и сгенерированных контрактах | Поле перечислено в контракте §4.3 и всегда передаётся UI и тестами; необязательность расходилась с фактическим использованием |
+| 2026-10-22 | `ChatRoom.memberCount` сделан обязательным в `openapi/rest.json` и сгенерированных контрактах | Поле перечислено в контракте §4.3 и всегда передаётся UI и тестами; необязательность расходилась с фактическим использованием |
+| 2026-10-23 | Спеки перенесены из `specs/` в `openapi/`; merged-спека сохраняется в `openapi/merged.json` | Единая точка хранения контрактов и результата слияния в дереве |
+| 2026-10-23 | Добавлен ASP.NET Core сервер `server/SignalRChat.Server` с SignalR.OpenApi | Контракт §4.3 требует реального хаба для интеграции; OpenAPI хаба генерируется из кода |
+| 2026-10-23 | Сервер хранит состояние in-memory и работает без БД | Dev-сценарий и интеграционные проверки; контракт не описывает персистентность |
+| 2026-10-23 | Сервер разложен по Clean Architecture: Domain / Application / Infrastructure / Server | Изоляция контрактов хаба от use cases и хранилища; composition root только в Server |
+| 2026-10-23 | `pnpm dev` запускает сервер и Vite одной командой, порты выбираются автоматически | Локальный запуск без ручной синхронизации `VITE_SIGNALR_URL` и портов |

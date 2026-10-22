@@ -1,0 +1,319 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Chat REST API",
+    "description": "REST endpoints for chat rooms and message history.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Local chat backend"
+    }
+  ],
+  "paths": {
+    "/api/rooms": {
+      "get": {
+        "operationId": "listRooms",
+        "summary": "List chat rooms",
+        "tags": [
+          "rooms"
+        ],
+        "responses": {
+          "200": {
+            "description": "Available chat rooms",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChatRoom"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{roomId}/messages": {
+      "get": {
+        "operationId": "listRoomMessages",
+        "summary": "List messages of a chat room",
+        "tags": [
+          "rooms"
+        ],
+        "parameters": [
+          {
+            "name": "roomId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Messages in the room",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChatMessage"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ChatRoom": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "memberCount"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "memberCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ChatMessage": {
+        "type": "object",
+        "required": [
+          "id",
+          "roomId",
+          "authorId",
+          "authorName",
+          "text",
+          "sentAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "roomId": {
+            "type": "string"
+          },
+          "authorId": {
+            "type": "string"
+          },
+          "authorName": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ChatUser": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "SendMessageRequest": {
+        "type": "object",
+        "required": [
+          "roomId",
+          "text"
+        ],
+        "properties": {
+          "roomId": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "JoinRoomRequest": {
+        "type": "object",
+        "required": [
+          "roomId",
+          "userName"
+        ],
+        "properties": {
+          "roomId": {
+            "type": "string"
+          },
+          "userName": {
+            "type": "string"
+          }
+        }
+      },
+      "JoinRoomResult": {
+        "type": "object",
+        "required": [
+          "room",
+          "user"
+        ],
+        "properties": {
+          "room": {
+            "$ref": "#/components/schemas/ChatRoom"
+          },
+          "user": {
+            "$ref": "#/components/schemas/ChatUser"
+          }
+        }
+      },
+      "SetNameRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "LeaveRoomRequest": {
+        "type": "object",
+        "required": [
+          "roomId"
+        ],
+        "properties": {
+          "roomId": {
+            "type": "string"
+          }
+        }
+      },
+      "GetHistoryRequest": {
+        "type": "object",
+        "required": [
+          "roomId"
+        ],
+        "properties": {
+          "roomId": {
+            "type": "string"
+          }
+        }
+      },
+      "MessageHistory": {
+        "type": "object",
+        "required": [
+          "roomId",
+          "messages"
+        ],
+        "properties": {
+          "roomId": {
+            "type": "string"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            }
+          }
+        }
+      },
+      "UserJoinedEvent": {
+        "type": "object",
+        "required": [
+          "roomId",
+          "user"
+        ],
+        "properties": {
+          "roomId": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/ChatUser"
+          }
+        }
+      },
+      "UserLeftEvent": {
+        "type": "object",
+        "required": [
+          "roomId",
+          "userId"
+        ],
+        "properties": {
+          "roomId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "x-signalr-hub": {
+    "name": "ChatHub",
+    "route": "/hubs/chat",
+    "methods": {
+      "SendMessage": {
+        "request": "SendMessageRequest",
+        "response": "ChatMessage"
+      },
+      "JoinRoom": {
+        "request": "JoinRoomRequest",
+        "response": "JoinRoomResult"
+      },
+      "SetName": {
+        "request": "SetNameRequest",
+        "response": "ChatUser"
+      },
+      "LeaveRoom": {
+        "request": "LeaveRoomRequest",
+        "response": null
+      },
+      "GetHistory": {
+        "request": "GetHistoryRequest",
+        "response": "MessageHistory"
+      }
+    },
+    "events": {
+      "ReceiveMessage": "ChatMessage",
+      "MessageHistory": "MessageHistory",
+      "UserJoined": "UserJoinedEvent",
+      "UserLeft": "UserLeftEvent",
+      "RoomUpdated": "ChatRoom"
+    }
+  }
+}
