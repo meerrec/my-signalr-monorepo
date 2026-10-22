@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Http.Connections;
 using SignalR.OpenApi.Extensions;
 using SignalRChat.Application.Abstractions;
 using SignalRChat.Application.Services;
@@ -49,7 +50,13 @@ app.MapGet(
     "/api/rooms/{roomId}/messages",
     (string roomId, ChatService chat) => Results.Ok(
         chat.GetHistory(roomId).Select(message => message.ToDto()).ToArray()));
-app.MapHub<ChatHub>("/hubs/chat");
+app.MapHub<ChatHub>(
+    "/hubs/chat",
+    options =>
+    {
+        // Единственный транспорт — long polling: WebSockets и SSE отключены.
+        options.Transports = HttpTransportType.LongPolling;
+    });
 app.MapSignalROpenApi();
 app.UseSignalRSwaggerUi();
 
