@@ -14,7 +14,7 @@ export interface ChatRoom {
   id: string;
   name: string;
   /** @format int32 */
-  memberCount?: number;
+  memberCount: number;
 }
 
 export interface ChatMessage {
@@ -36,12 +36,6 @@ export interface ChatUser {
   id: string;
   name: string;
 }
-
-export type ChatRoom1 = ChatRoom;
-
-export type ChatMessage1 = ChatMessage;
-
-export type ErrorResponse1 = ErrorResponse;
 
 export interface SendMessageRequest {
   roomId: string;
@@ -83,12 +77,6 @@ export interface UserJoinedEvent {
 export interface UserLeftEvent {
   roomId: string;
   userId: string;
-}
-
-export interface NegotiateResponse {
-  connectionId: string;
-  connectionToken: string;
-  availableTransports?: string[];
 }
 
 export type QueryParamsType = Record<string | number, any>;
@@ -385,23 +373,6 @@ export class Api<
       this.request<ChatMessage[], any>({
         path: `/api/rooms/${roomId}/messages`,
         method: "GET",
-        format: "json",
-        ...params,
-      }),
-  };
-  hubs = {
-    /**
-     * No description
-     *
-     * @tags signalr
-     * @name NegotiateChatHub
-     * @summary Negotiate a connection to the chat hub
-     * @request POST:/hubs/chat/negotiate
-     */
-    negotiateChatHub: (params: RequestParams = {}) =>
-      this.request<NegotiateResponse, any>({
-        path: `/hubs/chat/negotiate`,
-        method: "POST",
         format: "json",
         ...params,
       }),

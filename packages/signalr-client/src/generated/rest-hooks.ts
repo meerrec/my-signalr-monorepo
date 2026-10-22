@@ -9,7 +9,6 @@ type ApiClient = Api<unknown>;
 
 type ListRoomMessagesData = Awaited<ReturnType<ApiClient["api"]["listRoomMessages"]>>;
 type ListRoomsData = Awaited<ReturnType<ApiClient["api"]["listRooms"]>>;
-type NegotiateChatHubData = Awaited<ReturnType<ApiClient["hubs"]["negotiateChatHub"]>>;
 
 export interface RestHookOptions {
   immediate?: boolean;
@@ -113,65 +112,6 @@ export function useListRooms(options: RestHookOptions = {}): RestHookResult<List
     }
     try {
       const result = await api["api"]["listRooms"]();
-      if (mountedRef.current) {
-        setData(result);
-        setLoading(false);
-      }
-      return result;
-    } catch (caught) {
-      const nextError = caught instanceof Error ? caught : new Error(String(caught));
-      if (mountedRef.current) {
-        setError(nextError);
-        setLoading(false);
-      }
-      return null;
-    }
-  }, [api]);
-
-  useEffect(() => {
-    if (immediate) {
-      void request();
-    }
-  }, [immediate, request]);
-
-  const reset = useCallback(() => {
-    setData(null);
-    setError(null);
-    setLoading(false);
-  }, []);
-
-  return { data, error, loading, request, reset };
-}
-
-export function useNegotiateChatHub(options: RestHookOptions = {}): RestHookResult<NegotiateChatHubData> {
-  const { immediate = true, baseUrl, api: providedApi } = options;
-  const [data, setData] = useState<NegotiateChatHubData | null>(null);
-  const [error, setError] = useState<Error | null>(null);
-  const [loading, setLoading] = useState(false);
-  const mountedRef = useRef(true);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  const api = useMemo(() => {
-    if (providedApi) {
-      return providedApi;
-    }
-    const config: ApiConfig = baseUrl === undefined ? {} : { baseUrl };
-    return new Api(config);
-  }, [providedApi, baseUrl]);
-
-  const request = useCallback(async (): Promise<NegotiateChatHubData | null> => {
-    if (mountedRef.current) {
-      setLoading(true);
-      setError(null);
-    }
-    try {
-      const result = await api["hubs"]["negotiateChatHub"]();
       if (mountedRef.current) {
         setData(result);
         setLoading(false);

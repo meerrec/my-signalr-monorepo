@@ -11,25 +11,7 @@
       "description": "Local chat backend"
     }
   ],
-  "paths": {
-    "/hubs/chat/negotiate": {
-      "post": {
-        "operationId": "negotiateChatHub",
-        "summary": "Negotiate a connection to the chat hub",
-        "tags": ["signalr"],
-        "responses": {
-          "200": {
-            "description": "SignalR negotiation response",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/NegotiateResponse" }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
+  "paths": {},
   "components": {
     "schemas": {
       "ChatUser": {
@@ -40,9 +22,6 @@
           "name": { "type": "string" }
         }
       },
-      "ChatRoom": { "$ref": "./rest.json#/components/schemas/ChatRoom" },
-      "ChatMessage": { "$ref": "./rest.json#/components/schemas/ChatMessage" },
-      "ErrorResponse": { "$ref": "./rest.json#/components/schemas/ErrorResponse" },
       "SendMessageRequest": {
         "type": "object",
         "required": ["roomId", "text"],
@@ -113,18 +92,6 @@
         "properties": {
           "roomId": { "type": "string" },
           "userId": { "type": "string" }
-        }
-      },
-      "NegotiateResponse": {
-        "type": "object",
-        "required": ["connectionId", "connectionToken"],
-        "properties": {
-          "connectionId": { "type": "string" },
-          "connectionToken": { "type": "string" },
-          "availableTransports": {
-            "type": "array",
-            "items": { "type": "string" }
-          }
         }
       }
     }

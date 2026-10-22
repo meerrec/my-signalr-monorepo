@@ -110,9 +110,11 @@ export interface AppError {
 export * from './generated/rest';          // сгенерировано swagger-typescript-api
 export * from './generated/hub-contracts'; // сгенерировано из x-signalr-hub
 export { SignalRProvider } from './provider';
+export type { SignalRProviderProps, SignalRContextValue } from './provider';
 export { useSignalRContext, useSignalRStatus, useHubEvent, useHubInvoke } from './hooks';
 export { createChatHubConnection } from './client';
 export { toErrorMessage } from './lib/errors';
+export * from './generated/rest-hooks';          // сгенерировано scripts/generate-contracts.ts
 ```
 
 Хуки:
@@ -397,3 +399,9 @@ pnpm verify
 | 2026-10-22 | Локальная typed atom family в `entities/message/model` вместо `atomFamily` | Jotai 3 удалил `atomFamily`; контракт имён сохранён без downgrade Jotai |
 | 2026-10-22 | Внешнее `connection` провайдер запускает, но не останавливает и не перезапускает | Владелец соединения управляет жизненным циклом; провайдер только наблюдает |
 | 2026-10-22 | `sourcemap` в `vite.config.ts` перенесён из `rolldownOptions.output` в `build.sourcemap` | Vite 8 не поддерживает `rolldownOptions.output.sourcemap` (warning); `rollupOptions` по-прежнему не используется |
+| 2026-10-22 | Публичный API `@chat/signalr-client` дополнен `generated/rest-hooks` и типами `SignalRProviderProps`/`SignalRContextValue` | §4.2 отставал от фактического экспорта; типы нужны `shared/api`, хуки генерируются по §8 |
+| 2026-10-22 | Из `specs/signalr.json` удалены negotiate-путь, `NegotiateResponse` и схемы-алиасы `ChatRoom`/`ChatMessage`/`ErrorResponse` | §4.3 не описывает negotiate; дубли давали `ChatRoom1`/`ChatMessage1`/`ErrorResponse1` в `generated/rest.ts` |
+| 2026-10-22 | Lifecycle-подписки провайдера снимаются диспетчером с `WeakMap`, а не `connection.off` | в `@microsoft/signalr@10.0.11` `off` не удаляет колбэки `onreconnecting`/`onreconnected`/`onclose`; иначе StrictMode копит обработчики |
+| 2026-10-22 | Статус внешнего соединения в `Connecting` синхронизируется опросом состояния (200 мс) | события `onconnected` в SignalR нет — статус залипал в `connecting` |
+| 2026-10-22 | В `build` добавлен `rolldownOptions` | приведение `vite.config.ts` к правилу 8; `rollupOptions` отсутствует, sourcemap остаётся в `build.sourcemap` |
+| 2026-10-22 | `ChatRoom.memberCount` сделан обязательным в `specs/rest.json` и сгенерированных контрактах | Поле перечислено в контракте §4.3 и всегда передаётся UI и тестами; необязательность расходилась с фактическим использованием |

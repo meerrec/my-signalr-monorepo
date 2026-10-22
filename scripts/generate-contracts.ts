@@ -282,7 +282,7 @@ function parseGeneratedParameters(rawParameters: string): GeneratedParameter[] {
 
 /**
  * swagger-typescript-api groups Api methods by the first path segment
- * (for example api.listRooms and hubs.negotiateChatHub). The grouping is read
+ * (for example api.listRooms). The grouping is read
  * from the generated source instead of being re-implemented here.
  */
 function parseGeneratedApi(source: string): Map<string, GeneratedMethod> {

@@ -65,7 +65,7 @@
     "schemas": {
       "ChatRoom": {
         "type": "object",
-        "required": ["id", "name"],
+        "required": ["id", "name", "memberCount"],
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },

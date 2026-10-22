@@ -19,6 +19,9 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
+    // Правило 8 AGENTS.md: хук Rolldown задействован, кастомных output-опций пока нет,
+    // sourcemap задаётся на уровне build (rolldownOptions.output.sourcemap не поддерживается).
+    rolldownOptions: {},
     sourcemap: true,
   },
 });
