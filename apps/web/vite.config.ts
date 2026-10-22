@@ -17,6 +17,10 @@ export default defineConfig({
   preview: {
     port: 4173,
   },
+  // Worker с SignalR — module worker в dev и в build (иначе build отдаёт IIFE).
+  worker: {
+    format: 'es',
+  },
   build: {
     target: 'es2022',
     // Правило 8 AGENTS.md: хук Rolldown задействован, кастомных output-опций пока нет,

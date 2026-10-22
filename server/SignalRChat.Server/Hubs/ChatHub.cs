@@ -1,16 +1,21 @@
+using System.Threading.Channels;
 using Microsoft.AspNetCore.SignalR;
-using SignalRChat.Application.Abstractions;
 using SignalRChat.Application.Exceptions;
 using SignalRChat.Application.Services;
 using SignalRChat.Server.Contracts;
 using SignalRChat.Server.Mapping;
+using SignalRChat.Server.Realtime;
 
 namespace SignalRChat.Server.Hubs;
 
 /// <summary>
 /// Хаб чата. Контракт: openapi/signalr.json, route — /hubs/chat.
+/// Мутации и рассылки делегируются <see cref="ChatRealtimeService"/> через очередь работ.
 /// </summary>
-public sealed class ChatHub(ChatService chat) : Hub
+public sealed class ChatHub(
+    ChatService chat,
+    ChatRealtimeService realtime,
+    ILogger<ChatHub> logger) : Hub
 {
     public override async Task OnConnectedAsync()
     {
@@ -24,61 +29,30 @@ public sealed class ChatHub(ChatService chat) : Hub
         await base.OnConnectedAsync();
     }
 
-    public Task<ChatMessageDto> SendMessage(SendMessageRequest request) =>
-        ExecuteAsync(async () =>
-        {
-            var outcome = chat.SendMessage(Context.ConnectionId, request.RoomId, request.Text);
+    public Task<ChatMessageDto> SendMessage(SendMessageRequest request)
+    {
+        // Захватываем строку: после возврата из метода Context уже недоступен.
+        var connectionId = Context.ConnectionId;
+        return ExecuteAsync(() => realtime.SendMessageAsync(connectionId, request));
+    }
 
-            if (outcome.Joined is not null)
-            {
-                await BroadcastJoinAsync(outcome.Joined);
-            }
+    public Task<JoinRoomResultDto> JoinRoom(JoinRoomRequest request)
+    {
+        var connectionId = Context.ConnectionId;
+        return ExecuteAsync(() => realtime.JoinRoomAsync(connectionId, request));
+    }
 
-            var message = outcome.Message.ToDto();
-            await Clients.Group(message.RoomId).SendAsync("ReceiveMessage", message);
-            return message;
-        });
+    public Task<ChatUserDto> SetName(SetNameRequest request)
+    {
+        var connectionId = Context.ConnectionId;
+        return ExecuteAsync(() => realtime.SetNameAsync(connectionId, request));
+    }
 
-    public Task<JoinRoomResultDto> JoinRoom(JoinRoomRequest request) =>
-        ExecuteAsync(async () =>
-        {
-            var outcome = chat.JoinRoom(Context.ConnectionId, request.RoomId, request.UserName);
-            await BroadcastJoinAsync(outcome);
-            return new JoinRoomResultDto(outcome.Room.ToDto(), outcome.User.ToDto());
-        });
-
-    public Task<ChatUserDto> SetName(SetNameRequest request) =>
-        ExecuteAsync(async () =>
-        {
-            var (user, roomId) = chat.SetName(Context.ConnectionId, request.Name);
-
-            if (roomId is not null)
-            {
-                // Отдельного события обновления пользователя в контракте нет:
-                // клиент обновляет usersByIdAtom по UserJoined.
-                await Clients.Group(roomId).SendAsync(
-                    "UserJoined",
-                    new UserJoinedEventDto(roomId, user.ToDto()));
-            }
-
-            return user.ToDto();
-        });
-
-    public Task LeaveRoom(LeaveRoomRequest request) =>
-        ExecuteAsync(async () =>
-        {
-            var outcome = chat.LeaveRoom(Context.ConnectionId, request.RoomId);
-            if (outcome is null)
-            {
-                return;
-            }
-
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, outcome.Room.Id);
-            await Clients.Group(outcome.Room.Id).SendAsync(
-                "UserLeft",
-                new UserLeftEventDto(outcome.Room.Id, outcome.User.Id));
-            await Clients.All.SendAsync("RoomUpdated", outcome.Room.ToDto());
-        });
+    public Task LeaveRoom(LeaveRoomRequest request)
+    {
+        var connectionId = Context.ConnectionId;
+        return ExecuteAsync(() => realtime.LeaveRoomAsync(connectionId, request));
+    }
 
     public Task<MessageHistoryDto> GetHistory(GetHistoryRequest request) =>
         Execute(() =>
@@ -92,35 +66,32 @@ public sealed class ChatHub(ChatService chat) : Hub
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        var outcome = chat.Disconnect(Context.ConnectionId);
+        var connectionId = Context.ConnectionId;
 
-        if (outcome is not null)
+        try
         {
-            await Clients.Group(outcome.Room.Id).SendAsync(
-                "UserLeft",
-                new UserLeftEventDto(outcome.Room.Id, outcome.User.Id));
-            await Clients.All.SendAsync("RoomUpdated", outcome.Room.ToDto());
+            await realtime.DisconnectAsync(connectionId);
         }
-
-        await base.OnDisconnectedAsync(exception);
-    }
-
-    private async Task BroadcastJoinAsync(JoinOutcome outcome)
-    {
-        if (outcome.PreviousRoom is not null)
+        catch (OperationCanceledException cancelled)
         {
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, outcome.PreviousRoom.Id);
-            await Clients.Group(outcome.PreviousRoom.Id).SendAsync(
-                "UserLeft",
-                new UserLeftEventDto(outcome.PreviousRoom.Id, outcome.User.Id));
-            await Clients.All.SendAsync("RoomUpdated", outcome.PreviousRoom.ToDto());
+            // Штатная остановка сервера: очередь закрыта, работа отменена.
+            logger.LogDebug(
+                cancelled,
+                "Disconnect для соединения {ConnectionId} отменён при остановке сервера.",
+                connectionId);
         }
-
-        await Groups.AddToGroupAsync(Context.ConnectionId, outcome.Room.Id);
-        await Clients.Group(outcome.Room.Id).SendAsync(
-            "UserJoined",
-            new UserJoinedEventDto(outcome.Room.Id, outcome.User.ToDto()));
-        await Clients.All.SendAsync("RoomUpdated", outcome.Room.ToDto());
+        catch (ChannelClosedException closed)
+        {
+            // Очередь уже закрыта — отключение при shutdown обрабатывать не нужно.
+            logger.LogDebug(
+                closed,
+                "Очередь работ закрыта, Disconnect для соединения {ConnectionId} не выполнен.",
+                connectionId);
+        }
+        finally
+        {
+            await base.OnDisconnectedAsync(exception);
+        }
     }
 
     private static async Task<T> ExecuteAsync<T>(Func<Task<T>> action)

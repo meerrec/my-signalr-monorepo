@@ -206,6 +206,11 @@ action-атомы из `model/` через `useSetAtom`; в `model/` нет Reac
 без `invoke`, `fetch`, `useState` и записи primitive-атома. `SignalRStateBridge` из `app/providers/`
 ничего не рендерит: читает `useChatConnectionStatus()` и вызывает `setConnectionStatusActionAtom`.
 
+Соединение SignalR живёт в dedicated Web Worker: `SignalRProvider` создаёт `WorkerHubClient`,
+хуки получают события и статусы через `SignalRClient`, а `HubConnection` в main thread отсутствует.
+Worker стартует в эффекте провайдера после регистрации подписок детей, поэтому стартовые
+`RoomUpdated` из `OnConnectedAsync` не теряются.
+
 ```tsx
 // app/providers/signalr-state-bridge.tsx
 export function SignalRStateBridge(): null {
@@ -230,7 +235,7 @@ export function SignalRStateBridge(): null {
 ```
 
 Jotai `Provider` создаёт store, общий для Bridge, подписок и UI; `SignalRProvider` даёт контекст
-соединения для Bridge и `api/`-хуков. Если SignalR поставить снаружи Jotai, Bridge останется без
+worker-клиента (`SignalRClient`) для Bridge и `api/`-хуков. Если SignalR поставить снаружи Jotai, Bridge останется без
 store. Обработчики стабильны, а актуальные данные действие читает через `get` в момент записи.
 
 ## 7. Тестирование
@@ -281,6 +286,9 @@ describe('sendMessageActionAtom', () => {
 });
 ```
 
+Мост Worker↔main и рантайм воркера тестируются отдельно на фейковом `WorkerLike` и фейковом
+соединении (`packages/signalr-client/src/worker/*.test.ts`), без React и без хаба.
+
 Каждый `it` создаёт собственный `createStore()`: глобального store нет, состояние не протекает
 между тестами. Family разделяет экземпляры атомов, но состояние хранится в конкретном store.
 Фейковый `invoke` проверяет request и возвращает либо бросает подготовленный ответ.
@@ -296,6 +304,7 @@ describe('sendMessageActionAtom', () => {
 - хранение сообщений массивом в feature-слайсе и ручное слияние дублей в UI;
 - `push` вместо upsert по `id`; замена истории вместо merge;
 - `invoke`/`fetch` внутри подписки на событие хаба;
+- импорт runtime `@microsoft/signalr` в main-граф: соединение живёт в Worker;
 - действие, выбрасывающее исключение наружу или оставляющее `pending` навсегда;
 
 Чек-лист code review:
@@ -308,7 +317,8 @@ describe('sendMessageActionAtom', () => {
 6. Upsert-ы идемпотентны; batch-история не затирает live-сообщения; сортировка детерминирована.
 7. `messagesForRoomAtom` стабилен по ссылке для неизменившихся комнат (нет лишних ре-рендеров).
 8. Подписки SignalR живут в `api/`, вызывают action-атомы и не содержат транспорта/логики данных.
-9. `SignalRStateBridge` обновляет сессию одним действием; порядок провайдеров Jotai → SignalR соблюдён.
+9. `SignalRStateBridge` обновляет сессию одним действием; порядок провайдеров Jotai → SignalR соблюдён,
+   Worker стартует после регистрации подписок.
 10. Тест использует `createStore()`, фейковый `invoke` и проверяет success, error и изоляцию store.
 
 ## 9. Примеры кода

@@ -6,6 +6,8 @@ using SignalRChat.Application.Services;
 using SignalRChat.Infrastructure.Persistence;
 using SignalRChat.Server.Hubs;
 using SignalRChat.Server.Mapping;
+using SignalRChat.Server.Queues;
+using SignalRChat.Server.Realtime;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,6 +39,11 @@ builder.Services.AddSignalRSwaggerUi();
 // Composition root: порт из Application, реализация из Infrastructure.
 builder.Services.AddSingleton<IChatStore, InMemoryChatStore>();
 builder.Services.AddSingleton<ChatService>();
+
+// Очередь — singleton: hosted service резолвит тот же экземпляр (не AddHostedService<T>).
+builder.Services.AddSingleton<ChatWorkQueue>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ChatWorkQueue>());
+builder.Services.AddSingleton<ChatRealtimeService>();
 
 var app = builder.Build();
 

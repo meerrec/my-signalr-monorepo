@@ -9,6 +9,6 @@ export {
   useHubEvent,
   useHubInvoke,
 } from './hooks';
-export { createChatHubConnection } from './client';
 export { toErrorMessage } from './lib/errors';
+export type { SignalRClient, SignalRStatusSnapshot } from './transport/types';
 export * from './generated/rest-hooks';
