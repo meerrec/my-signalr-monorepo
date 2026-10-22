@@ -28,8 +28,14 @@ cp .env.example .env
 pnpm dev
 ```
 
-Dev-сервер: http://localhost:5173. URL SignalR-хаба задаётся переменной
-`VITE_SIGNALR_URL` (по умолчанию `http://localhost:5000/hubs/chat`).
+`pnpm dev` одной командой поднимает ASP.NET Core SignalR-хаб и Vite. Скрипт сам
+выбирает свободные порты, подставляет `VITE_SIGNALR_URL` для приложения и печатает
+фактические адреса (по умолчанию хаб — `http://localhost:5000/hubs/chat`, UI —
+`http://localhost:5173`). Значение `VITE_SIGNALR_URL` из `.env` при этом перекрывается
+адресом запущенного хаба.
+
+OpenAPI хаба доступен по `/openapi/signalr-v1.json`, Swagger UI — `/signalr-swagger`.
+Отдельный запуск сервера: `pnpm server`.
 
 ## Сборка
 
@@ -46,7 +52,10 @@ pnpm install && pnpm build
 
 | Команда | Назначение |
 | --- | --- |
-| `pnpm dev` | Запуск Vite dev-сервера приложения |
+| `pnpm dev` | Одна команда: SignalR-сервер + Vite, свободные порты выбираются автоматически |
+| `pnpm dev:web` | Только Vite dev-сервер приложения |
+| `pnpm server` | Только ASP.NET Core SignalR-сервер (`server/SignalRChat.Server`) |
+| `pnpm server:build` | Сборка решения `server/SignalRChat.slnx` |
 | `pnpm build` | Тип-чек пакетов и production-сборка `apps/web` |
 | `pnpm type-check` | TypeScript strict без эмита по всем воркспейсам |
 | `pnpm test` | Все тесты Vitest |
@@ -71,11 +80,20 @@ pnpm install && pnpm build
 ├── packages/
 │   ├── shared-types/             # типы, не генерируемые из OpenAPI
 │   └── signalr-client/           # провайдер, типизированные хуки, generated
-├── specs/                        # rest.json + signalr.json (OpenAPI 3.1)
+├── server/
+│   ├── SignalRChat.slnx
+│   ├── SignalRChat.Domain/       # сущности чата
+│   ├── SignalRChat.Application/  # use cases и порты (IChatStore)
+│   ├── SignalRChat.Infrastructure/ # in-memory реализация хранилища
+│   └── SignalRChat.Server/       # ASP.NET Core + SignalR + SignalR.OpenApi
+├── openapi/                      # rest.json, signalr.json, merged.json (OpenAPI 3.1)
 ├── scripts/generate-contracts.ts # пайплайн контрактов
 ├── docs/                         # state-management.md, ADR
 └── AGENTS.md                     # топология субагентов и контракты
 ```
+
+Сервер построен по Clean Architecture: `Domain ← Application ← Infrastructure`,
+`Server` — composition root и слой доставки (Hub + REST).
 
 ## Feature-Sliced Design
 
@@ -102,14 +120,15 @@ pnpm install && pnpm build
 
 Источник правды:
 
-- `specs/rest.json` — REST API.
-- `specs/signalr.json` — SignalR Hub (`x-signalr-hub`) и связанные схемы.
+- `openapi/rest.json` — REST API.
+- `openapi/signalr.json` — SignalR Hub (`x-signalr-hub`) и связанные схемы.
+- `openapi/merged.json` — результат слияния, пересоздаётся генератором.
 
 Пайплайн:
 
 ```text
-specs/*.json
-  → openapi-merge-cli → .cache/merged-openapi.json
+openapi/rest.json + openapi/signalr.json
+  → openapi-merge-cli → openapi/merged.json
   → swagger-typescript-api → generated/rest.ts
   → generate-contracts.ts (reactHooks: true) → generated/rest-hooks.ts
   → generate-contracts.ts → generated/hub-contracts.ts
@@ -131,7 +150,7 @@ pnpm generate:contracts
 ```
 
 При необходимости можно указать удалённые спеки через `SIGNALR_OPENAPI_URL` и
-`REST_OPENAPI_URL`; иначе используются локальные файлы из `specs/`.
+`REST_OPENAPI_URL`; иначе используются локальные файлы из `openapi/`.
 
 ## Тестирование
 

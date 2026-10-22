@@ -44,12 +44,12 @@
 - 5 методов хаба: `SendMessage`, `JoinRoom`, `SetName`, `LeaveRoom`, `GetHistory`.
 - 5 событий хаба: `ReceiveMessage`, `MessageHistory`, `UserJoined`, `UserLeft`, `RoomUpdated`.
 - Дублей вида `ChatRoom1`/`ChatMessage1`/`ErrorResponse1` в `rest.ts` нет.
-- `negotiate` / `NegotiateResponse` не встречаются ни в `specs/`, ни в
+- `negotiate` / `NegotiateResponse` не встречаются ни в `openapi/`, ни в
   `packages/signalr-client/src/generated/` (`grep -rni "negotiate"` не даёт совпадений).
 
-Исходные спеки: `specs/rest.json` — 2 пути (`/api/rooms`,
+Исходные спеки: `openapi/rest.json` — 2 пути (`/api/rooms`,
 `/api/rooms/{roomId}/messages`) и 3 схемы (`ChatRoom`, `ChatMessage`, `ErrorResponse`);
-`specs/signalr.json` — 10 схем и `x-signalr-hub` с 5 методами и 5 событиями.
+`openapi/signalr.json` — 10 схем и `x-signalr-hub` с 5 методами и 5 событиями.
 Merge даёт 13 прикладных схем.
 
 ## 3. `git status --short`
@@ -65,8 +65,8 @@ Merge даёт 13 прикладных схем.
  M packages/signalr-client/src/provider.tsx
  M reports/qa-report.md
  M scripts/generate-contracts.ts
- M specs/rest.json
- M specs/signalr.json
+ M openapi/rest.json
+ M openapi/signalr.json
 ```
 
 Ровно 10 файлов из ожидаемого постановкой набора; неотслеживаемых файлов нет.
@@ -75,7 +75,7 @@ Merge даёт 13 прикладных схем.
 
 ## 4. `ChatRoom.memberCount`: рассинхрон устранён
 
-- В `specs/rest.json` (строка 68) `ChatRoom.required` содержит `["id", "name", "memberCount"]`;
+- В `openapi/rest.json` (строка 68) `ChatRoom.required` содержит `["id", "name", "memberCount"]`;
   `memberCount` объявлен как `integer`/`int32`.
 - В перегенерированном `packages/signalr-client/src/generated/rest.ts` поле обязательное:
   строка 17 — `memberCount: number;` (без `?`).
@@ -110,8 +110,8 @@ Merge даёт 13 прикладных схем.
 
 ### (б) Спецификация и генерация
 
-Из `specs/signalr.json` удалены negotiate-путь, `NegotiateResponse` и схемы-дубли:
-`grep -rni "negotiate" specs/ packages/signalr-client/src/generated/` не даёт совпадений.
+Из `openapi/signalr.json` удалены negotiate-путь, `NegotiateResponse` и схемы-дубли:
+`grep -rni "negotiate" openapi/ packages/signalr-client/src/generated/` не даёт совпадений.
 Генерация даёт 13 прикладных схем, 2 REST-хука, 5 методов и 5 событий хаба (перечислены
 в разделе 2); дубли `ChatRoom1`/`ChatMessage1`/`ErrorResponse1` в `rest.ts` отсутствуют.
 Проверка выполнена на текущем состоянии спеки; повторная генерация подтверждает

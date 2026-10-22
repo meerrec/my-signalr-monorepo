@@ -9,7 +9,10 @@
     "pnpm": ">=11"
   },
   "scripts": {
-    "dev": "pnpm --filter @chat/web dev",
+    "dev": "node scripts/dev-all.mjs",
+    "dev:web": "pnpm --filter @chat/web dev",
+    "server": "dotnet run --project server/SignalRChat.Server",
+    "server:build": "dotnet build server/SignalRChat.slnx",
     "build": "pnpm -r --if-present build",
     "type-check": "pnpm -r --if-present type-check && pnpm type-check:tools",
     "test": "vitest run",
