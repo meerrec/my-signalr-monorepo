@@ -113,10 +113,16 @@ export * from './generated/hub-contracts'; // сгенерировано из x-
 export { SignalRProvider } from './provider';
 export type { SignalRProviderProps, SignalRContextValue } from './provider';
 export { useSignalRContext, useSignalRStatus, useHubEvent, useHubInvoke } from './hooks';
-export { createChatHubConnection } from './client';
+export type { SignalRClient, SignalRStatusSnapshot } from './transport/types';
 export { toErrorMessage } from './lib/errors';
 export * from './generated/rest-hooks';          // сгенерировано scripts/generate-contracts.ts
 ```
+
+Соединение создаётся и живёт только в dedicated Web Worker (`worker/entry.ts`):
+main thread общается с ним через `SignalRClient` (`WorkerHubClient`, postMessage-RPC).
+`client.ts` с `createChatHubConnection` — внутренний модуль worker-графа и не входит
+в публичный API, иначе runtime `@microsoft/signalr` попадёт в main-чанк.
+`SignalRProvider` принимает только `url`; `HubConnection` в приложение не передаётся.
 
 Хуки:
 
@@ -124,7 +130,6 @@ export * from './generated/rest-hooks';          // сгенерировано s
 function useSignalRStatus(): {
   status: ConnectionStatus;
   error: string | null;
-  connection: HubConnection | null;
 };
 
 function useHubEvent<K extends HubEventName>(
@@ -279,6 +284,9 @@ type SetNameInvoker = (request: SetNameRequest) => Promise<ChatUser>;
 
 - Подписки на события хаба живут в `api/` сегментах entities и вызывают action-атомы
   через `useSetAtom`.
+- Соединение живёт в Web Worker; main thread получает события и статусы через
+  `SignalRClient` из контекста провайдера. `useHubEvent` регистрируется в эффектах детей
+  раньше `start()` провайдера, поэтому стартовые `RoomUpdated` не теряются.
 - `ReceiveMessage` → `upsertMessageActionAtom`.
 - `MessageHistory` → `upsertMessagesActionAtom`.
 - `UserJoined` → `upsertUserActionAtom`.
@@ -341,7 +349,10 @@ type SetNameInvoker = (request: SetNameRequest) => Promise<ChatUser>;
 - SignalR: `@microsoft/signalr`.
 - Сервер: ASP.NET Core 10 + SignalR + `SignalR.OpenApi` (`server/SignalRChat.Server`), состояние in-memory.
   Слои: `SignalRChat.Domain` ← `SignalRChat.Application` ← `SignalRChat.Infrastructure`;
-  `SignalRChat.Server` — composition root, Hub и REST.
+  `SignalRChat.Server` — composition root, Hub и REST. Мутации и рассылки сериализуются
+  очередью `ChatWorkQueue` (`Channel` + `BackgroundService`, bounded 1024, single reader).
+- SignalR-клиент: dedicated Web Worker, `worker.format: 'es'`, типизированный postMessage-RPC;
+  runtime `@microsoft/signalr` не попадает в main-чанк.
 - OpenAPI: `swagger-typescript-api` + `openapi-merge-cli`. В версии 13.13 у генератора нет
   встроенного флага `reactHooks`, поэтому `scripts/generate-contracts.ts` реализует режим
   `reactHooks: true` сам: генерирует `Api` и типы через CLI, затем выпускает типизированные
@@ -387,6 +398,8 @@ pnpm verify
 - Нет заглушек и пустых `index.ts`.
 - Нет дублирования типов, сгенерированных из OpenAPI.
 - Нет прямых мутаций атомов из компонентов.
+- В main-чанке нет runtime `@microsoft/signalr`; worker-ассет собирается Vite.
+- Серверная очередь дренируется при shutdown: ожидающие вызовы не зависают.
 - README содержит одну команду сборки и одну команду запуска dev.
 - `docs/state-management.md` содержит сравнение Jotai с Zustand/Redux/Valtio,
   правила атомов и карту состояния.
@@ -415,3 +428,7 @@ pnpm verify
 | 2026-10-23 | Сервер разложен по Clean Architecture: Domain / Application / Infrastructure / Server | Изоляция контрактов хаба от use cases и хранилища; composition root только в Server |
 | 2026-10-23 | `pnpm dev` запускает сервер и Vite одной командой, порты выбираются автоматически | Локальный запуск без ручной синхронизации `VITE_SIGNALR_URL` и портов |
 | 2026-10-23 | Транспорт SignalR ограничен HTTP long polling: `transport` в клиенте и `HttpConnectionDispatcherOptions.Transports` на сервере | WebSockets и SSE не должны использоваться ни клиентом, ни сервером |
+| 2026-10-23 | SignalR-соединение перенесено в dedicated Web Worker; main thread общается через `SignalRClient` (postMessage-RPC) | Сеть не занимает main thread; тихий worker без heartbeat — известное ограничение демо |
+| 2026-10-23 | `SignalRProvider` принимает только `url`; `createChatHubConnection` убран из публичного API, `useSignalRStatus` больше не отдаёт `connection` | В worker-режиме `HubConnection` на main thread нет; статический re-export фабрики затянул бы `@microsoft/signalr` в main-чанк |
+| 2026-10-23 | Lifecycle-подписки и опрос `Connecting` переехали из провайдера в `worker/runtime.ts`; WeakMap-диспетчер больше не нужен | Соединение создаёт и стартует сам Worker, `start()` резолвится в `connected`; запись 2026-10-22 про WeakMap и опрос 200 мс заменена |
+| 2026-10-23 | Серверные мутации, изменение групп и broadcast сериализованы `ChatWorkQueue` (`Channel` bounded 1024, `BackgroundService`); `GetHistory` и `OnConnectedAsync` остаются прямыми | Мутация + рассылка — одна единица работы без гонок; backlog ограничен backpressure, shutdown дренирует очередь |

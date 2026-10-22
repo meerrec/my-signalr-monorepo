@@ -1,6 +1,5 @@
 export {
   SignalRProvider,
-  createChatHubConnection,
   toErrorMessage,
   useHubEvent,
   useHubInvoke,
@@ -8,8 +7,10 @@ export {
   useSignalRStatus,
 } from '@chat/signalr-client';
 export type {
+  SignalRClient,
   SignalRContextValue,
   SignalRProviderProps,
+  SignalRStatusSnapshot,
   ChatMessage,
   ChatRoom,
   ChatUser,

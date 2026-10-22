@@ -12,7 +12,9 @@ Production-ready монорепозиторий real-time чата на SignalR:
 | Приложение | React 19, TypeScript 5.9 strict |
 | Сборка | Vite 8 + Rolldown (`build.sourcemap`) |
 | Состояние | Jotai 3, атомы в `model/` каждого слайса |
-| Real-time | `@microsoft/signalr` 10 |
+| Real-time | `@microsoft/signalr` 10, HTTP long polling |
+| Транспорт клиента | Dedicated Web Worker, типизированный postMessage-RPC |
+| Сервер | ASP.NET Core 10 + SignalR, очередь `Channel` и `BackgroundService` |
 | Архитектура | Feature-Sliced Design, публичные API слайсов |
 | Контракты | OpenAPI 3.1, `openapi-merge-cli`, `swagger-typescript-api` |
 | Тесты | Vitest, `createStore()` из `jotai/vanilla` |
@@ -79,13 +81,13 @@ pnpm install && pnpm build
 │           └── shared/           # UI-кит, API, config, lib
 ├── packages/
 │   ├── shared-types/             # типы, не генерируемые из OpenAPI
-│   └── signalr-client/           # провайдер, типизированные хуки, generated
+│   └── signalr-client/           # worker-мост, провайдер, хуки, generated
 ├── server/
 │   ├── SignalRChat.slnx
 │   ├── SignalRChat.Domain/       # сущности чата
 │   ├── SignalRChat.Application/  # use cases и порты (IChatStore)
 │   ├── SignalRChat.Infrastructure/ # in-memory реализация хранилища
-│   └── SignalRChat.Server/       # ASP.NET Core + SignalR + SignalR.OpenApi
+│   └── SignalRChat.Server/       # composition root: Hub, REST, очереди (Queues/, Realtime/)
 ├── openapi/                      # rest.json, signalr.json, merged.json (OpenAPI 3.1)
 ├── scripts/generate-contracts.ts # пайплайн контрактов
 ├── docs/                         # state-management.md, ADR
@@ -113,6 +115,11 @@ pnpm install && pnpm build
 - Компоненты читают через `useAtomValue`, пишут через `useSetAtom` и действия.
 - Мега-атомы на всё приложение запрещены.
 - `messagesByRoomAtom` + локальная typed atom family (Map-cache) изолируют сообщения комнат.
+
+Соединение SignalR живёт в dedicated Web Worker: main thread получает статусы и события
+через `SignalRProvider` → `useChatEvent` → action-атомы, сам `HubConnection` в приложение
+не попадает. Серверные мутации сериализуются очередью `ChatWorkQueue`, поэтому состояние
+и broadcast меняются строго в порядке поступления.
 
 Подробности и сравнение с Zustand/Redux/Valtio: [docs/state-management.md](docs/state-management.md).
 
@@ -160,16 +167,20 @@ pnpm test
 
 Атомы тестируются без React через `createStore()` из `jotai/vanilla`, транспорт
 SignalR внедряется в action-атомы как `invoke`, поэтому тесты не требуют хаба.
+Мост Worker↔main и рантайм воркера покрыты юнит-тестами на фейковых `Worker` и соединении.
 
 ## Документация
 
 - [AGENTS.md](AGENTS.md) — топология субагентов, зоны ответственности, контракты.
 - [docs/state-management.md](docs/state-management.md) — Jotai, карта состояния, правила.
 - [docs/adr/0001-fsd-boundaries.md](docs/adr/0001-fsd-boundaries.md) — FSD-границы и ESLint.
+- [docs/adr/0002-signalr-client-web-worker.md](docs/adr/0002-signalr-client-web-worker.md) — SignalR в Web Worker.
+- [docs/adr/0003-server-command-queue.md](docs/adr/0003-server-command-queue.md) — серверная очередь и BackgroundService.
 
 ## Ограничения демо
 
-- SignalR-сервер в репозиторий не входит. Без него приложение рендерится,
-  но показывает статус соединения `error`/`disconnected`.
-- Аутентификация и хранение истории на сервере не реализованы: контракты описывают
-  точки интеграции, а состояние живёт в Jotai.
+- SignalR-сервер входит в репозиторий (`server/`), но состояние и очередь живут in-memory:
+  при рестарте история и необработанные операции теряются, несколько инстансов не согласуются.
+- Аутентификация не реализована; история ограничена временем жизни процесса.
+- Транспорт ограничен HTTP long polling на клиенте и сервере: задержки выше, чем у WebSocket.
+- Тихая смерть Worker без события `error` не детектируется — heartbeat не реализован.
