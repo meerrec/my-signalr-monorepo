@@ -1,0 +1,399 @@
+# AGENTS.md — SignalR Chat Monorepo
+
+Статус: **v1, заморожен до прохождения QA**.
+Владелец документа: `@architect`. Арбитр конфликтов: оркестратор.
+Документ описывает топологию субагентов, зоны записи, замороженные контракты и правила,
+которые обязаны соблюдать все агенты. Любое изменение контракта ниже требует явного
+решения оркестратора и записи в разделе «Журнал решений».
+
+## 1. Цель и незыблемые ограничения
+
+Сгенерировать production-ready монорепозиторий чата на SignalR со сборкой одной командой:
+
+```bash
+pnpm install && pnpm build
+```
+
+Ограничения:
+
+1. Feature-Sliced Design с публичными API `index.ts` у каждого слайса.
+2. Импорты только вниз по слоям FSD. «Вбок» и «вверх» запрещены. Циклы запрещены.
+3. Единая OpenAPI-спецификация — источник правды для REST- и SignalR-контрактов.
+4. Состояние — только Jotai с гранулярными атомами в `model/` слайсов.
+5. Никаких Zustand, MobX, Valtio, Redux Toolkit.
+6. Никаких мега-атомов вида `appStateAtom`.
+7. Компоненты не мутируют атомы напрямую: только через атомы-действия.
+8. В `vite.config.ts` используется `build.rolldownOptions`, не `rollupOptions`; sourcemap задаётся через `build.sourcemap` (Vite 8 не поддерживает `rolldownOptions.output.sourcemap`).
+9. Сгенерированные из OpenAPI типы не дублируются руками.
+10. В `index.ts` нет заглушек, только реальные реэкспорты.
+11. `pnpm install && pnpm build` обязан работать с чистого клона без сетевого доступа
+    к SignalR-серверу: сгенерированные контракты коммитятся в репозиторий.
+
+## 2. Топология субагентов (supervisor)
+
+```text
+                    ┌──────────────────────┐
+                    │     Оркестратор      │
+                    │  контракты, арбитраж │
+                    └──────────┬───────────┘
+         ┌───────────┬─────────┼──────────┬────────────┬──────────┐
+         ▼           ▼         ▼          ▼            ▼          ▼
+   @architect  @infra  @signalr-integrator  @state-manager  @ui-builder  @qa
+```
+
+Каждый субагент получает только свою постановку и свою зону записи. Чужие файлы не читает
+целиком: только `grep` и участки через `sed -n`/`head`/`tail` при необходимости.
+
+| Субагент | Вход | Выход | Критерий готовности |
+| --- | --- | --- | --- |
+| `@architect` | Черновик AGENTS.md, FSD-требования | Финальный AGENTS.md, `eslint.config.js` с `eslint-plugin-boundaries`, ADR | Ноль нарушений границ |
+| `@state-manager` | Список слайсов, контракт атомов | `docs/state-management.md`, атомы в `model/`, тесты атомов через `createStore()` | Все атомы изолированы в слайсах, мега-атомов нет |
+| `@signalr-integrator` | OpenAPI-спеки, `packages/*` | `specs/**`, `scripts/generate-contracts.ts`, `packages/signalr-client`, `packages/shared-types` | Type-safe вызовы и подписки, генерация воспроизводима |
+| `@ui-builder` | Публичные API слайсов, дизайн-токены | `shared/ui`, `app/providers`, `widgets`, `pages`, UI/API-сегменты слайсов | Компоненты собираются без циклов |
+| `@infra` | Технологический стек | Корневые манифесты, `vite.config.ts`, tsconfig, workspace, скрипты | `pnpm build` зелёный с чистого клона |
+| `@qa` | Код всех субагентов | `reports/qa-report.md`, список дефектов | `lint`, `type-check`, `test`, `build` зелёные |
+
+## 3. Зоны записи (ownership)
+
+Правило: **только владелец пишет файлы в своей зоне**. Пересечение зон запрещено.
+Если для слайса нужна правка в чужой зоне, агент сообщает об этом оркестратору.
+
+| Зона | Владелец |
+| --- | --- |
+| `AGENTS.md`, `eslint.config.js`, `docs/adr/**` | `@architect` |
+| `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `tsconfig.base.json`, `.npmrc`, `.gitignore`, `vitest.config.ts`, `apps/web/{package.json,vite.config.ts,tsconfig.json,tsconfig.node.json,index.html}` | `@infra` |
+| `specs/**`, `scripts/**`, `packages/shared-types/**`, `packages/signalr-client/**` | `@signalr-integrator` |
+| `apps/web/src/entities/*/model/**`, `apps/web/src/features/*/model/**`, `docs/state-management.md` | `@state-manager` |
+| `apps/web/src/app/**`, `apps/web/src/pages/**`, `apps/web/src/widgets/**`, `apps/web/src/shared/{ui,lib,config}/**`, `apps/web/src/entities/*/{api,ui}/**`, `apps/web/src/features/*/{api,ui}/**` | `@ui-builder` |
+| `apps/web/src/shared/api/**` | `@signalr-integrator` |
+| `README.md` | `@infra` (финальная вычитка оркестратором) |
+| `reports/**` | `@qa` |
+
+Тесты:
+
+- тесты атомов и селекторов лежат рядом с `model/` и принадлежат `@state-manager`;
+- тесты утилит/провайдера SignalR лежат рядом с исходником и принадлежат владельцу файла;
+- `@qa` только запускает проверки и пишет отчёт, код не правит.
+
+## 4. Замороженный контракт пакетов
+
+Пакеты — source-first workspace-пакеты: `exports` указывают на `src/*.ts`, отдельного
+`dist` нет. Vite собирает их исходники. Скрипт `build` пакета = `tsc --noEmit`.
+
+### 4.1 `@chat/shared-types`
+
+Только типы и константы, которые **не** генерируются из OpenAPI:
+
+```ts
+export type ConnectionStatus =
+  | 'idle'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'disconnected'
+  | 'error';
+
+export type AsyncStatus = 'idle' | 'pending' | 'success' | 'error';
+export type EntityId = string;
+
+export interface AppError {
+  code: string;
+  message: string;
+}
+```
+
+### 4.2 `@chat/signalr-client`
+
+Публичный API пакета:
+
+```ts
+export * from './generated/rest';          // сгенерировано swagger-typescript-api
+export * from './generated/hub-contracts'; // сгенерировано из x-signalr-hub
+export { SignalRProvider } from './provider';
+export { useSignalRContext, useSignalRStatus, useHubEvent, useHubInvoke } from './hooks';
+export { createChatHubConnection } from './client';
+export { toErrorMessage } from './lib/errors';
+```
+
+Хуки:
+
+```ts
+function useSignalRStatus(): {
+  status: ConnectionStatus;
+  error: string | null;
+  connection: HubConnection | null;
+};
+
+function useHubEvent<K extends HubEventName>(
+  event: K,
+  handler: (payload: HubEventMap[K]) => void,
+): void;
+
+function useHubInvoke<K extends HubMethodName>(
+  method: K,
+): (request: HubMethodMap[K]['request']) => Promise<HubMethodMap[K]['response']>;
+```
+
+`apps/web/src/shared/api/**` принадлежит `@signalr-integrator`: реэкспорт типов и провайдера из пакета, типизированные обёртки `useChatEvent`, `useChatInvoke`, `useChatConnectionStatus`.
+
+### 4.3 Контракт SignalR-хаба
+
+Хаб: `ChatHub`, маршрут `/hubs/chat`. Метаданные хранятся в `specs/signalr.json`
+в корневом расширении `x-signalr-hub` (переживает merge через отдельное чтение спеки).
+
+| Метод | Request | Response |
+| --- | --- | --- |
+| `SendMessage` | `SendMessageRequest` | `ChatMessage` |
+| `JoinRoom` | `JoinRoomRequest` | `JoinRoomResult` |
+| `SetName` | `SetNameRequest` | `ChatUser` |
+| `LeaveRoom` | `LeaveRoomRequest` | `void` |
+| `GetHistory` | `GetHistoryRequest` | `MessageHistory` |
+
+| Событие | Payload |
+| --- | --- |
+| `ReceiveMessage` | `ChatMessage` |
+| `MessageHistory` | `MessageHistory` |
+| `UserJoined` | `UserJoinedEvent` |
+| `UserLeft` | `UserLeftEvent` |
+| `RoomUpdated` | `ChatRoom` |
+
+Схемы OpenAPI: `ChatUser {id, name}`, `ChatRoom {id, name, memberCount}`,
+`ChatMessage {id, roomId, authorId, authorName, text, sentAt}`,
+`SendMessageRequest {roomId, text}`, `JoinRoomRequest {roomId, userName}`,
+`JoinRoomResult {room, user}`, `SetNameRequest {name}`, `LeaveRoomRequest {roomId}`,
+`GetHistoryRequest {roomId}`, `MessageHistory {roomId, messages}`,
+`UserJoinedEvent {roomId, user}`, `UserLeftEvent {roomId, userId}`,
+`ErrorResponse {code, message}`.
+
+REST-пути объявлены в `specs/rest.json`:
+
+- `GET /api/rooms` → `ChatRoom[]`
+- `GET /api/rooms/{roomId}/messages` → `ChatMessage[]`
+
+## 5. Замороженный контракт состояния (Jotai)
+
+Атомы создаются только в `model/` соответствующего слайса и экспортируются только через
+`index.ts` слайса. Действия — единственный способ менять примитивные атомы из UI.
+
+### 5.1 Слой entities
+
+`entities/session`:
+
+```ts
+connectionStatusAtom: PrimitiveAtom<ConnectionStatus>
+connectionErrorAtom: PrimitiveAtom<string | null>
+isConnectedAtom: Atom<boolean> // derived
+setConnectionStatusActionAtom: ActionAtom<{ status: ConnectionStatus; error: string | null }>
+```
+
+`entities/user`:
+
+```ts
+currentUserAtom: PrimitiveAtom<ChatUser | null>
+usersByIdAtom: PrimitiveAtom<Record<string, ChatUser>>
+usersAtom: Atom<ChatUser[]> // derived, сортировка по name
+usersCountAtom: Atom<number> // derived
+setCurrentUserActionAtom: ActionAtom<ChatUser | null>
+upsertUserActionAtom: ActionAtom<ChatUser>
+removeUserActionAtom: ActionAtom<string>
+```
+
+`entities/room`:
+
+```ts
+roomsByIdAtom: PrimitiveAtom<Record<string, ChatRoom>>
+currentRoomIdAtom: PrimitiveAtom<string | null>
+currentRoomAtom: Atom<ChatRoom | null> // derived
+roomsAtom: Atom<ChatRoom[]> // derived, сортировка по name
+upsertRoomActionAtom: ActionAtom<ChatRoom>
+selectCurrentRoomActionAtom: ActionAtom<string | null>
+```
+
+`entities/message`:
+
+```ts
+messagesByRoomAtom: PrimitiveAtom<Record<string, Record<string, ChatMessage>>>
+messagesForRoomAtom: AtomFamily<string, ChatMessage[]> // локальная typed atom family (Map-cache), сортировка по sentAt и id
+messageCountForRoomAtom: AtomFamily<string, number> // локальная typed atom family (Map-cache)
+upsertMessageActionAtom: ActionAtom<ChatMessage> // upsert по id
+upsertMessagesActionAtom: ActionAtom<ChatMessage[]> // batch upsert
+clearRoomMessagesActionAtom: ActionAtom<string>
+```
+
+### 5.2 Слой features
+
+`features/send-message`:
+
+```ts
+messageDraftAtom: PrimitiveAtom<string>
+sendMessageStatusAtom: PrimitiveAtom<AsyncStatus>
+sendMessageErrorAtom: PrimitiveAtom<string | null>
+changeMessageDraftActionAtom: ActionAtom<string>
+sendMessageActionAtom: ActionAtom<{ invoke: SendMessageInvoker }>
+```
+
+`features/join-room`:
+
+```ts
+joinRoomIdDraftAtom: PrimitiveAtom<string>
+joinRoomUserNameDraftAtom: PrimitiveAtom<string>
+joinRoomStatusAtom: PrimitiveAtom<AsyncStatus>
+joinRoomErrorAtom: PrimitiveAtom<string | null>
+changeJoinRoomIdActionAtom: ActionAtom<string>
+changeJoinRoomUserNameActionAtom: ActionAtom<string>
+joinRoomActionAtom: ActionAtom<{ invoke: JoinRoomInvoker }>
+```
+
+`features/set-name`:
+
+```ts
+nameDraftAtom: PrimitiveAtom<string>
+setNameStatusAtom: PrimitiveAtom<AsyncStatus>
+setNameErrorAtom: PrimitiveAtom<string | null>
+changeNameDraftActionAtom: ActionAtom<string>
+setNameActionAtom: ActionAtom<{ invoke: SetNameInvoker }>
+```
+
+Типы инвокеров:
+
+```ts
+type SendMessageInvoker = (request: SendMessageRequest) => Promise<ChatMessage>;
+type JoinRoomInvoker = (request: JoinRoomRequest) => Promise<JoinRoomResult>;
+type SetNameInvoker = (request: SetNameRequest) => Promise<ChatUser>;
+```
+
+Поведение действий:
+
+- валидируют ввод до вызова транспорта;
+- выставляют `pending`, затем `success` или `error`;
+- ошибки транспорта преобразуются через `getErrorMessage` и не выбрасываются наружу;
+- при успехе обновляют только свои данные и данные нижележащих entities через их action-атомы;
+- `sendMessageActionAtom` очищает черновик при успехе;
+- `joinRoomActionAtom` выбирает комнату, сохраняет `room` и `user`;
+- `setNameActionAtom` обновляет `currentUserAtom` и `usersByIdAtom`.
+
+### 5.3 Интеграция SignalR с состоянием
+
+- Подписки на события хаба живут в `api/` сегментах entities и вызывают action-атомы
+  через `useSetAtom`.
+- `ReceiveMessage` → `upsertMessageActionAtom`.
+- `MessageHistory` → `upsertMessagesActionAtom`.
+- `UserJoined` → `upsertUserActionAtom`.
+- `UserLeft` → `removeUserActionAtom`.
+- `RoomUpdated` → `upsertRoomActionAtom`.
+- Статус соединения попадает в `entities/session` через `SignalRStateBridge`
+  в `app/providers/`, который вызывает `setConnectionStatusActionAtom`.
+- В компонентах используется `useAtomValue` для чтения и `useSetAtom` для записи.
+  `useAtom` допускается только когда нужны и чтение, и запись.
+
+## 6. Замороженный контракт UI
+
+`shared/ui` (публичный API `shared/ui/index.ts`):
+
+- `Button`: `variant: 'primary' | 'secondary' | 'ghost' | 'danger'`, `size: 'sm' | 'md'`,
+  `loading?: boolean`, `fullWidth?: boolean`.
+- `Input`: `label?: string`, `error?: string`, `hint?: string`, остальные пропсы
+  `InputHTMLAttributes<HTMLInputElement>`.
+- `Textarea`: `label?: string`, `error?: string`, остальные пропсы
+  `TextareaHTMLAttributes<HTMLTextAreaElement>`.
+- `Avatar`: `name: string`, `size?: 'sm' | 'md' | 'lg'`.
+- `Badge`: `tone?: 'neutral' | 'accent' | 'success' | 'warning' | 'danger'`, `dot?: boolean`.
+- `Spinner`: `size?: 'sm' | 'md'`.
+- `Panel`: `title?: string`, `actions?: ReactNode`, `className?: string`, `children`.
+
+`shared/lib`:
+
+- `cn(...values: Array<string | false | null | undefined>): string`
+- `formatTime(iso: string): string`
+- `getInitials(name: string): string`
+- `getErrorMessage(error: unknown, fallback?: string): string`
+
+`shared/config`:
+
+- `env.signalRUrl`, `env.appName`; URL по умолчанию `http://localhost:5000/hubs/chat`.
+
+`shared/api/signalr`:
+
+- реэкспорт типов и провайдера из `@chat/signalr-client`;
+- типизированные обёртки `useChatEvent` и `useChatInvoke`;
+- `useChatConnectionStatus` для UI.
+
+## 7. FSD и границы
+
+Слои сверху вниз: `app → pages → widgets → features → entities → shared`.
+
+- Кросс-слайсовый импорт только через `index.ts` слайса.
+- Внутри слайса допустимы относительные импорты между сегментами.
+- `shared` не импортирует другие слои.
+- Пакеты `packages/*` не импортируют `apps/web`.
+- Границы проверяет `eslint-plugin-boundaries`; элемент = папка слайса.
+- Тесты (`*.test.ts(x)`) исключены из проверки границ.
+- Запрещены циклические зависимости.
+
+## 8. Технологический стек и команды
+
+- pnpm workspaces: `apps/*`, `packages/*`.
+- Vite 8 (Rolldown), React 19, TypeScript strict.
+- Jotai 3; `Provider` в `app/providers/`.
+- SignalR: `@microsoft/signalr`.
+- OpenAPI: `swagger-typescript-api` + `openapi-merge-cli`. В версии 13.13 у генератора нет
+  встроенного флага `reactHooks`, поэтому `scripts/generate-contracts.ts` реализует режим
+  `reactHooks: true` сам: генерирует `Api` и типы через CLI, затем выпускает типизированные
+  React-хуки в `generated/rest-hooks.ts` из той же merged-спеки.
+- Тесты: Vitest, атомы через `createStore()` из `jotai/vanilla`.
+- Линт: ESLint flat config + `typescript-eslint` + `eslint-plugin-boundaries`.
+
+Команды:
+
+```bash
+pnpm install
+pnpm dev
+pnpm build
+pnpm type-check
+pnpm test
+pnpm lint
+pnpm generate:contracts
+pnpm verify
+```
+
+`pnpm build` не запускает генерацию контрактов и не требует сети. Генерация — отдельная
+команда, её результат коммитится.
+
+## 9. Протокол делегирования
+
+1. Один субагент — один слайс или одна инфраструктурная задача.
+2. В постановке перечисляются: цель, точные файлы для записи, файлы, которые трогать нельзя,
+   готовые контракты, команды проверки.
+3. Читать большие файлы целиком запрещено. Поиск через `grep`/`rg`, чтение участками
+   `sed -n`, `head`, `tail`.
+4. Если слайс велик, субагент обязан дробить его и передавать подзадачи своим субагентам.
+   Это ожидаемое поведение, а не признак невыполнения.
+5. Запрещено менять корневые манифесты и lockfile без роли `@infra`.
+6. Запрещено форматировать или рефакторить чужие файлы.
+7. Результат субагента: список созданных файлов, выполненные проверки, известные риски.
+8. Оркестратор собирает выходы, разрешает конфликты и запускает `@qa` последним.
+
+## 10. Definition of Done
+
+- `pnpm install && pnpm build` с чистого клона завершается успешно.
+- `pnpm lint`, `pnpm type-check`, `pnpm test`, `pnpm build` зелёные.
+- Ноль нарушений `eslint-plugin-boundaries`.
+- Нет заглушек и пустых `index.ts`.
+- Нет дублирования типов, сгенерированных из OpenAPI.
+- Нет прямых мутаций атомов из компонентов.
+- README содержит одну команду сборки и одну команду запуска dev.
+- `docs/state-management.md` содержит сравнение Jotai с Zustand/Redux/Valtio,
+  правила атомов и карту состояния.
+- `reports/qa-report.md` содержит вывод проверок и версии инструментов.
+
+## 11. Журнал решений
+
+| Дата | Решение | Причина |
+| --- | --- | --- |
+| 2026-10-22 | Source-first workspace-пакеты без `dist` | Vite собирает TS-исходники; меньше шагов сборки, нет рассинхрона |
+| 2026-10-22 | Один Vite-конфиг в `apps/web`, `vitest.config.ts` в корне | Единый прогон тестов для app и packages |
+| 2026-10-22 | `messagesByRoomAtom` + локальная typed atom family для сообщений | Изоляция комнат без мега-атома и без sideways-импортов |
+| 2026-10-22 | Транспорт внедряется в action-атом параметром `invoke` | Атомы тестируются без React и SignalR |
+| 2026-10-22 | Локальная typed atom family в `entities/message/model` вместо `atomFamily` | Jotai 3 удалил `atomFamily`; контракт имён сохранён без downgrade Jotai |
+| 2026-10-22 | Внешнее `connection` провайдер запускает, но не останавливает и не перезапускает | Владелец соединения управляет жизненным циклом; провайдер только наблюдает |
+| 2026-10-22 | `sourcemap` в `vite.config.ts` перенесён из `rolldownOptions.output` в `build.sourcemap` | Vite 8 не поддерживает `rolldownOptions.output.sourcemap` (warning); `rollupOptions` по-прежнему не используется |

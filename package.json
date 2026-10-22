@@ -1,0 +1,37 @@
+{
+  "name": "my-signalr-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=22.12.0",
+    "pnpm": ">=11"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @chat/web dev",
+    "build": "pnpm -r --if-present build",
+    "type-check": "pnpm -r --if-present type-check && pnpm type-check:tools",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "generate:contracts": "tsx scripts/generate-contracts.ts",
+    "verify": "pnpm lint && pnpm type-check && pnpm test && pnpm build",
+    "type-check:tools": "tsc -p tsconfig.tools.json --noEmit"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.0.0",
+    "eslint": "^10.13.0",
+    "eslint-plugin-boundaries": "^7.2.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "openapi-merge-cli": "^2.0.2",
+    "swagger-typescript-api": "^13.13.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.0",
+    "vite": "^8.3.5",
+    "vitest": "^4.1.12"
+  }
+}
