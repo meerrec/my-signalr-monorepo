@@ -414,3 +414,4 @@ pnpm verify
 | 2026-10-23 | Сервер хранит состояние in-memory и работает без БД | Dev-сценарий и интеграционные проверки; контракт не описывает персистентность |
 | 2026-10-23 | Сервер разложен по Clean Architecture: Domain / Application / Infrastructure / Server | Изоляция контрактов хаба от use cases и хранилища; composition root только в Server |
 | 2026-10-23 | `pnpm dev` запускает сервер и Vite одной командой, порты выбираются автоматически | Локальный запуск без ручной синхронизации `VITE_SIGNALR_URL` и портов |
+| 2026-10-23 | Транспорт SignalR ограничен HTTP long polling: `transport` в клиенте и `HttpConnectionDispatcherOptions.Transports` на сервере | WebSockets и SSE не должны использоваться ни клиентом, ни сервером |
