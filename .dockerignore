@@ -1,0 +1,32 @@
+# VCS и локальные настройки
+.git
+.gitignore
+.dockerignore
+.vscode
+*.code-workspace
+
+# Секреты и локальные env-файлы
+.env
+.env.*
+
+# Зависимости и артефакты сборки
+node_modules
+**/node_modules
+dist
+**/dist
+coverage
+.cache
+*.tsbuildinfo
+server/**/bin
+server/**/obj
+
+# Не нужны образам
+docs
+reports
+scripts
+openapi
+README.md
+AGENTS.md
+eslint.config.js
+vitest.config.ts
+tsconfig.tools.json

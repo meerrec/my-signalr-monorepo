@@ -62,6 +62,7 @@ pnpm install && pnpm build
 | --- | --- |
 | `AGENTS.md`, `eslint.config.js`, `docs/adr/**` | `@architect` |
 | `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `tsconfig.base.json`, `.npmrc`, `.gitignore`, `vitest.config.ts`, `apps/web/{package.json,vite.config.ts,tsconfig.json,tsconfig.node.json,index.html}` | `@infra` |
+| `docker/**`, `docker-compose.yml`, `.dockerignore` | `@infra` |
 | `openapi/**`, `scripts/**`, `packages/shared-types/**`, `packages/signalr-client/**` | `@signalr-integrator` |
 | `server/**` | `@signalr-integrator` |
 | `apps/web/src/entities/*/model/**`, `apps/web/src/features/*/model/**`, `docs/state-management.md` | `@state-manager` |
@@ -371,6 +372,9 @@ pnpm test
 pnpm lint
 pnpm generate:contracts
 pnpm verify
+pnpm docker:build
+pnpm docker:up
+pnpm docker:down
 ```
 
 `pnpm build` не запускает генерацию контрактов и не требует сети. Генерация — отдельная
@@ -432,3 +436,4 @@ pnpm verify
 | 2026-10-23 | `SignalRProvider` принимает только `url`; `createChatHubConnection` убран из публичного API, `useSignalRStatus` больше не отдаёт `connection` | В worker-режиме `HubConnection` на main thread нет; статический re-export фабрики затянул бы `@microsoft/signalr` в main-чанк |
 | 2026-10-23 | Lifecycle-подписки и опрос `Connecting` переехали из провайдера в `worker/runtime.ts`; WeakMap-диспетчер больше не нужен | Соединение создаёт и стартует сам Worker, `start()` резолвится в `connected`; `stop` до завершения `start` не вызывает `connection.stop` — Worker просто завершается; запись 2026-10-22 про WeakMap и опрос 200 мс заменена |
 | 2026-10-23 | Серверные мутации, изменение групп и broadcast сериализованы `ChatWorkQueue` (`Channel` bounded 1024, `BackgroundService`); `GetHistory` и `OnConnectedAsync` остаются прямыми | Мутация + рассылка — одна единица работы без гонок; backlog ограничен backpressure, shutdown дренирует очередь |
+| 2026-10-23 | Добавлена Docker-сборка: `docker/server.Dockerfile`, `docker/web.Dockerfile`, `docker/nginx/default.conf.template`, `docker-compose.yml` | Два multi-stage образа без лишних зависимостей в runtime; nginx проксирует `/hubs/` и `/api/` в сервис `server`, клиент собирается с относительным `VITE_SIGNALR_URL=/hubs/chat` — один origin, CORS не участвует; `stop_grace_period` 35 с даёт `ChatWorkQueue` дренироваться |

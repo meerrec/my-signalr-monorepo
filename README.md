@@ -50,6 +50,33 @@ pnpm install && pnpm build
 Сборка не требует сети и не запускает кодогенерацию: сгенерированные контракты
 закоммичены в `packages/signalr-client/src/generated/`.
 
+## Docker
+
+Два multi-stage образа и `docker-compose.yml`:
+
+- `docker/server.Dockerfile` — SDK 10.0 → `dotnet publish` → runtime `aspnet:10.0`,
+  запуск от встроенного пользователя `app`, healthcheck на `/`;
+- `docker/web.Dockerfile` — Node 24 + pnpm → `vite build` → `nginx:stable-alpine`.
+
+```bash
+pnpm docker:up        # docker compose up --build
+```
+
+- UI: `http://localhost:8080`
+- Swagger UI: `http://localhost:8080/signalr-swagger`
+- OpenAPI хаба: `http://localhost:8080/openapi/signalr-v1.json`
+- REST: `http://localhost:8080/api/rooms`
+
+nginx отдаёт статику и проксирует `/hubs/`, `/api/`, `/openapi/` и `/signalr-swagger`
+в сервис `server`, поэтому браузер работает с одним origin и CORS не участвует.
+Web собирается с относительным `VITE_SIGNALR_URL=/hubs/chat`; worker-клиент достраивает
+адрес от `location.href` в main-потоке. Порт сервера наружу не публикуется.
+
+Остановка: `pnpm docker:down`. Порт web-контейнера переопределяется через
+`WEB_PORT=9090 pnpm docker:up`; адрес хаба в сборке — через
+`DOCKER_SIGNALR_URL=https://chat.example.com/hubs/chat pnpm docker:up` (абсолютный
+адрес подходит для хаба, развёрнутого отдельно от статики).
+
 ## Команды
 
 | Команда | Назначение |
@@ -65,6 +92,9 @@ pnpm install && pnpm build
 | `pnpm lint` | ESLint, включая FSD-границы |
 | `pnpm generate:contracts` | Скачивание/слияние OpenAPI и генерация контрактов |
 | `pnpm verify` | `lint` + `type-check` + `test` + `build` |
+| `pnpm docker:build` | Сборка образов `server` и `web` |
+| `pnpm docker:up` | Сборка и запуск через `docker compose` (UI на `:8080`) |
+| `pnpm docker:down` | Остановка и удаление контейнеров compose |
 
 ## Структура
 

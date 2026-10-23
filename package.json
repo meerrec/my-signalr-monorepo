@@ -20,6 +20,9 @@
     "lint": "eslint .",
     "generate:contracts": "tsx scripts/generate-contracts.ts",
     "verify": "pnpm lint && pnpm type-check && pnpm test && pnpm build",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down",
     "type-check:tools": "tsc -p tsconfig.tools.json --noEmit"
   },
   "devDependencies": {
